@@ -43,7 +43,7 @@
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
+/* timer indexes encapsulated in wrappers, no main-visible timing variables */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -51,11 +51,88 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
-
+static void SysTick_Init(void);
+static void Task50Hz(void);
+static void Task25Hz(void);
+static void Task10Hz(void);
+static void Task1Hz(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+static void SysTick_Init(void)
+{
+  if (HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq() / 1000U) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
+}
+
+static void Task50Hz(void)
+{
+  static uint32_t next = 0;
+  uint32_t now = HAL_GetTick();
+  if (next == 0)
+  {
+    next = now + 20U;
+  }
+
+  if ((int32_t)(now - next) >= 0)
+  {
+    next += 20U;
+    HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+  }
+}
+
+static void Task25Hz(void)
+{
+  static uint32_t next = 0;
+  uint32_t now = HAL_GetTick();
+  if (next == 0)
+  {
+    next = now + 40U;
+  }
+
+  if ((int32_t)(now - next) >= 0)
+  {
+    next += 40U;
+    /* TODO: 25 Hz action */
+  }
+}
+
+static void Task10Hz(void)
+{
+  static uint32_t next = 0;
+  uint32_t now = HAL_GetTick();
+  if (next == 0)
+  {
+    next = now + 100U;
+  }
+
+  if ((int32_t)(now - next) >= 0)
+  {
+    next += 100U;
+    /* TODO: 10 Hz action */
+  }
+}
+
+static void Task1Hz(void)
+{
+  static uint32_t next = 0;
+  uint32_t now = HAL_GetTick();
+  if (next == 0)
+  {
+    next = now + 1000U;
+  }
+
+  if ((int32_t)(now - next) >= 0)
+  {
+    next += 1000U;
+    /* TODO: 1 Hz action */
+  }
+}
 
 /* USER CODE END 0 */
 
@@ -89,17 +166,21 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
-  /* USER CODE BEGIN 2 */
 
+  /* USER CODE BEGIN 2 */
+  SysTick_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* USER CODE END WHILE */
+    Task50Hz();
+    Task25Hz();
+    Task10Hz();
+    Task1Hz();
 
-    /* USER CODE BEGIN 3 */
+    /* USER CODE END 3 */
   }
   /* USER CODE END 3 */
 }
