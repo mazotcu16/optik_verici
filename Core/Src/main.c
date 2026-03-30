@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 // Deneme yorum satiri.
+// Deneme yorum satiri2.
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
