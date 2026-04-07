@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "gimbal_controller.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -53,6 +54,7 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 static void SysTick_Init(void);
+static void Task200Hz(void);
 static void Task50Hz(void);
 static void Task25Hz(void);
 static void Task10Hz(void);
@@ -69,6 +71,22 @@ static void SysTick_Init(void)
     Error_Handler();
   }
   HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
+}
+
+static void Task200Hz(void)
+{
+  static uint32_t next = 0;
+  uint32_t now = HAL_GetTick();
+  if (next == 0)
+  {
+    next = now + 5U;
+  }
+
+  if ((int32_t)(now - next) >= 0)
+  {
+    next += 5U;
+    gimbal_controller_step();
+  }
 }
 
 static void Task50Hz(void)
@@ -174,8 +192,14 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
+  /*initialize işini burada yapcaz, umarım doğrudur yoksa aradığın yer burası xbıdxobcd*/
+  gimbal_controller_initialize();
+
+
   while (1)
   {
+    Task200Hz();
     Task50Hz();
     Task25Hz();
     Task10Hz();
