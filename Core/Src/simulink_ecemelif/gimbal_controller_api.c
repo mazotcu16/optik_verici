@@ -1,4 +1,4 @@
-#include "gimbal_controller_api.h"
+#include "simulink_ecemelif/gimbal_controller_api.h"
 
 void gimbal_controller_set_Q1(real_T value)
 {

@@ -46,11 +46,13 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/simulink_ecemelif/gimbal_controller_api.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/simulink_ecemelif/gimbal_controller.c
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
+    ${CMAKE_CURRENT_SOURCE_DIR}/Core
 )
 
 # Add project symbols (macros)

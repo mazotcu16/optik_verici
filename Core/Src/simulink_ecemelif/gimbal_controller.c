@@ -17,9 +17,9 @@
  * Validation result: Not run
  */
 
-#include "gimbal_controller.h"
+#include "Inc/simulink_ecemelif/gimbal_controller.h"
 #include <math.h>
-#include "rtwtypes.h"
+#include "Inc/simulink_ecemelif/rtwtypes.h"
 
 /* Block states (default storage) */
 DW_gimbal_controller_T gimbal_controller_DW;
