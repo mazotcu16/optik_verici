@@ -3,7 +3,7 @@
  * course requirements at degree granting institutions only.  Not for
  * government, commercial, or other organizational use.
  *
- * File: gimbal_controller_types.h
+ * File: rtmodel.h
  *
  * Code generated for Simulink model 'gimbal_controller'.
  *
@@ -17,13 +17,15 @@
  * Validation result: Not run
  */
 
-#ifndef gimbal_controller_types_h_
-#define gimbal_controller_types_h_
+#ifndef rtmodel_h_
+#define rtmodel_h_
+#include "gimbal_controller.h"
 
-/* Forward declaration for rtModel */
-typedef struct tag_RTM_gimbal_controller_T RT_MODEL_gimbal_controller_T;
-
-#endif                                 /* gimbal_controller_types_h_ */
+/* Macros generated for backwards compatibility  */
+#ifndef rtmGetStopRequested
+#define rtmGetStopRequested(rtm)       ((void*) 0)
+#endif
+#endif                                 /* rtmodel_h_ */
 
 /*
  * File trailer for generated code.
