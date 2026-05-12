@@ -22,6 +22,10 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "simulink_ecemelif/gimbal_controller.h"
+#include "simulink_ecemelif/gimbal_controller_api.h"
+#include "motor_drive/motor_drive.h"
+#include "stm32f1xx_hal_gpio.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -46,6 +50,8 @@ DMA_HandleTypeDef hdma_adc1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+gimbal_t gimbal_st = {GIMBAL_STATE_IDLE};
+
 /* timer indexes encapsulated in wrappers, no main-visible timing variables */
 #define ADC_CHANNELS  4
 #define ADC_VREF_MV   3300U   /* reference voltage in millivolts */
@@ -94,6 +100,29 @@ static void Task200Hz(void)
   {
     next += 5U;
     gimbal_controller_step();
+    switch(/*TODO ECEMELİF BURAYA STATE GET YAZILACAK*/gimbal_st.gimbal_state_et)
+    {
+      case GIMBAL_STATE_IDLE:
+      {
+        gimbal_st.gimbal_state_et = GIMBAL_STATE_SEARCHING;
+        break;
+      }
+      case GIMBAL_STATE_SEARCHING:
+      {
+          double motor_direction = gimbal_controller_get_omega_cmd_yaw();
+          enable_motor(YAW_MOTOR);
+          drive_motor(YAW_MOTOR, motor_direction > 0);
+           /*TODO ECEMELİF gimbal_controller_get_omega_cmd_pitch fonksiyonu yazilacak asagidaki satirin yorum satiri acilacak.*/
+          /* motor_direction = gimbal_controller_get_omega_cmd_pitch(); */
+          enable_motor(PITCH_MOTOR);
+          drive_motor(PITCH_MOTOR, motor_direction > 0);
+        break;
+      }
+      case GIMBAL_STATE_COMMUNICATION:
+      {
+        break;
+      }
+    }
   }
 }
 
@@ -108,8 +137,9 @@ static void Task50Hz(void)
 
   if ((int32_t)(now - next) >= 0)
   {
+
     next += 20U;
-    HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+
   }
 }
 
@@ -152,10 +182,12 @@ static void Task1Hz(void)
   if (next == 0)
   {
     next = now + 1000U;
+
   }
 
   if ((int32_t)(now - next) >= 0)
   {
+    HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
     next += 1000U;
     /* TODO: 1 Hz action */
   }
@@ -404,7 +436,16 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, LD2_Pin|DIR_YAW_Pin|STEP_PITCH_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(ENA_YAW_GPIO_Port, ENA_YAW_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(ENA_PITCH_GPIO_Port, ENA_PITCH_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, STEP_YAW_Pin|DIR_PITCH_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -412,12 +453,19 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : LD2_Pin */
-  GPIO_InitStruct.Pin = LD2_Pin;
+  /*Configure GPIO pins : LD2_Pin DIR_YAW_Pin STEP_PITCH_Pin ENA_PITCH_Pin */
+  GPIO_InitStruct.Pin = LD2_Pin|DIR_YAW_Pin|STEP_PITCH_Pin|ENA_PITCH_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : ENA_YAW_Pin STEP_YAW_Pin DIR_PITCH_Pin */
+  GPIO_InitStruct.Pin = ENA_YAW_Pin|STEP_YAW_Pin|DIR_PITCH_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);

@@ -4,7 +4,7 @@
         "-DCMAKE_COMMAND=cube-cmake"
     ],
     "cmake.preferredGenerators": [
-        "Ninja"
+        "Unix Makefiles"
     ],
     "stm32cube-ide-clangd.path": "cube",
     "stm32cube-ide-clangd.arguments": [
