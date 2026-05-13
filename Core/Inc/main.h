@@ -89,6 +89,7 @@ void Error_Handler(void);
 typedef enum{
   GIMBAL_STATE_IDLE = 0,
   GIMBAL_STATE_SEARCHING,
+  GIMBAL_STATE_TRACKING,
   GIMBAL_STATE_COMMUNICATION
 }gimbal_state_t;
 

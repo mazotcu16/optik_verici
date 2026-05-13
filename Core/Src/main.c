@@ -99,8 +99,18 @@ static void Task200Hz(void)
   if ((int32_t)(now - next) >= 0)
   {
     next += 5U;
+
+    // Set Simulink inputs using new channel mapping: L=1, R=3, U=0, D=2
+    gimbal_controller_set_L(ADC_GetVolts(1));
+    gimbal_controller_set_R(ADC_GetVolts(3));
+    gimbal_controller_set_U(ADC_GetVolts(0));
+    gimbal_controller_set_D(ADC_GetVolts(2));
+    gimbal_controller_set_theta_meas_yaw(0.0);  // TODO: Set actual yaw measurement
+    gimbal_controller_set_theta_meas_pitch(0.0); // TODO: Set actual pitch measurement
+
     gimbal_controller_step();
-    switch(/*TODO ECEMELİF BURAYA STATE GET YAZILACAK*/gimbal_st.gimbal_state_et)
+
+    switch(gimbal_st.gimbal_state_et)
     {
       case GIMBAL_STATE_IDLE:
       {
@@ -109,17 +119,43 @@ static void Task200Hz(void)
       }
       case GIMBAL_STATE_SEARCHING:
       {
-          double motor_direction = gimbal_controller_get_omega_cmd_yaw();
+          double motor_direction_yaw = gimbal_controller_get_omega_cmd_yaw();
           enable_motor(YAW_MOTOR);
-          drive_motor(YAW_MOTOR, motor_direction > 0);
-           /*TODO ECEMELİF gimbal_controller_get_omega_cmd_pitch fonksiyonu yazilacak asagidaki satirin yorum satiri acilacak.*/
-          /* motor_direction = gimbal_controller_get_omega_cmd_pitch(); */
+          drive_motor(YAW_MOTOR, motor_direction_yaw > 0);
+
+          double motor_direction_pitch = gimbal_controller_get_omega_cmd_pitch();
           enable_motor(PITCH_MOTOR);
-          drive_motor(PITCH_MOTOR, motor_direction > 0);
+          drive_motor(PITCH_MOTOR, motor_direction_pitch > 0);
+
+          // If beam is valid, transition to tracking mode
+          if (gimbal_controller_get_beam_valid())
+          {
+              gimbal_st.gimbal_state_et = GIMBAL_STATE_TRACKING;
+          }
+        break;
+      }
+      case GIMBAL_STATE_TRACKING:
+      {
+          double motor_direction_yaw = gimbal_controller_get_omega_cmd_yaw();
+          enable_motor(YAW_MOTOR);
+          drive_motor(YAW_MOTOR, motor_direction_yaw > 0);
+
+          double motor_direction_pitch = gimbal_controller_get_omega_cmd_pitch();
+          enable_motor(PITCH_MOTOR);
+          drive_motor(PITCH_MOTOR, motor_direction_pitch > 0);
+
+          // If communication is enabled, transition to communication mode
+          if (gimbal_controller_get_comm_enabled())
+          {
+              gimbal_st.gimbal_state_et = GIMBAL_STATE_COMMUNICATION;
+          }
         break;
       }
       case GIMBAL_STATE_COMMUNICATION:
       {
+          // Disable motors when in communication mode
+          disable_motor(YAW_MOTOR);
+          disable_motor(PITCH_MOTOR);
         break;
       }
     }
