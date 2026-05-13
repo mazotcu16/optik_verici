@@ -47,7 +47,12 @@
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
-UART_HandleTypeDef huart2;
+TIM_HandleTypeDef htim1;
+TIM_HandleTypeDef htim2;
+
+UART_HandleTypeDef huart1;
+DMA_HandleTypeDef hdma_usart1_rx;
+DMA_HandleTypeDef hdma_usart1_tx;
 
 /* USER CODE BEGIN PV */
 gimbal_t gimbal_st = {GIMBAL_STATE_IDLE};
@@ -58,14 +63,19 @@ gimbal_t gimbal_st = {GIMBAL_STATE_IDLE};
 #define ADC_MAX_VAL   4095U   /* 12-bit */
 
 volatile uint16_t adc_buf[ADC_CHANNELS];
+static char uart_comm_tx_buf[10] = {"veri_gonde"};
+static uint8_t uart_comm_rx_buf[10];
+static uint8_t uart_comm_tx_seq = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
-static void MX_USART2_UART_Init(void);
 static void MX_ADC1_Init(void);
+static void MX_TIM1_Init(void);
+static void MX_TIM2_Init(void);
+static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 static void SysTick_Init(void);
 static void Task200Hz(void);
@@ -73,6 +83,9 @@ static void Task50Hz(void);
 static void Task25Hz(void);
 static void Task10Hz(void);
 static void Task1Hz(void);
+static void UART_Comm_Init(void);
+static void UART_Comm_Send(void);
+float ADC_GetVolts(uint8_t ch);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -85,6 +98,25 @@ static void SysTick_Init(void)
     Error_Handler();
   }
   HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
+}
+
+static void UART_Comm_Init(void)
+{
+  /* Start continuous UART Rx in DMA circular mode. */
+  HAL_UART_Receive_DMA(&huart1, uart_comm_rx_buf, sizeof(uart_comm_rx_buf));
+}
+
+static void UART_Comm_Send(void)
+{
+  if (huart1.gState != HAL_UART_STATE_READY)
+  {
+    return;
+  }
+
+
+  uart_comm_tx_seq++;
+
+  HAL_UART_Transmit_DMA(&huart1, (uint8_t*)uart_comm_tx_buf, sizeof(uart_comm_tx_buf));
 }
 
 static void Task200Hz(void)
@@ -105,8 +137,8 @@ static void Task200Hz(void)
     gimbal_controller_set_R(ADC_GetVolts(3));
     gimbal_controller_set_U(ADC_GetVolts(0));
     gimbal_controller_set_D(ADC_GetVolts(2));
-    gimbal_controller_set_theta_meas_yaw(0.0);  // TODO: Set actual yaw measurement
-    gimbal_controller_set_theta_meas_pitch(0.0); // TODO: Set actual pitch measurement
+   //gimbal_controller_set_theta_meas_yaw(0.0);  // TODO: Set actual yaw measurement
+  //gimbal_controller_set_theta_meas_pitch(0.0); // TODO: Set actual pitch measurement
 
     gimbal_controller_step();
 
@@ -115,6 +147,7 @@ static void Task200Hz(void)
       case GIMBAL_STATE_IDLE:
       {
         gimbal_st.gimbal_state_et = GIMBAL_STATE_SEARCHING;
+
         break;
       }
       case GIMBAL_STATE_SEARCHING:
@@ -133,6 +166,7 @@ static void Task200Hz(void)
           {
               gimbal_st.gimbal_state_et = GIMBAL_STATE_TRACKING;
           }
+
         break;
       }
       case GIMBAL_STATE_TRACKING:
@@ -145,6 +179,7 @@ static void Task200Hz(void)
           if (!beam_valid)
           {
               gimbal_st.gimbal_state_et = GIMBAL_STATE_SEARCHING;
+              
               break;
           }
 
@@ -161,24 +196,7 @@ static void Task200Hz(void)
       }
       case GIMBAL_STATE_COMMUNICATION:
       {
-          boolean_T comm_enabled = gimbal_controller_get_comm_enabled();
-          boolean_T beam_valid = gimbal_controller_get_beam_valid();
 
-          if (!comm_enabled)
-          {
-              if (beam_valid)
-              {
-                  gimbal_st.gimbal_state_et = GIMBAL_STATE_TRACKING;
-              }
-              else
-              {
-                  gimbal_st.gimbal_state_et = GIMBAL_STATE_SEARCHING;
-              }
-              break;
-          }
-
-          disable_motor(YAW_MOTOR);
-          disable_motor(PITCH_MOTOR);
         break;
       }
     }
@@ -230,7 +248,11 @@ static void Task10Hz(void)
   if ((int32_t)(now - next) >= 0)
   {
     next += 100U;
-    /* TODO: 10 Hz action */
+
+    if (gimbal_st.gimbal_state_et == GIMBAL_STATE_COMMUNICATION)
+    {
+      UART_Comm_Send();
+    }
   }
 }
 
@@ -284,12 +306,15 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
-  MX_USART2_UART_Init();
   MX_ADC1_Init();
+  MX_TIM1_Init();
+  MX_TIM2_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   SysTick_Init();
   HAL_ADCEx_Calibration_Start(&hadc1);
   HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buf, ADC_CHANNELS);
+  UART_Comm_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -428,35 +453,148 @@ static void MX_ADC1_Init(void)
 }
 
 /**
-  * @brief USART2 Initialization Function
+  * @brief TIM1 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_USART2_UART_Init(void)
+static void MX_TIM1_Init(void)
 {
 
-  /* USER CODE BEGIN USART2_Init 0 */
+  /* USER CODE BEGIN TIM1_Init 0 */
 
-  /* USER CODE END USART2_Init 0 */
+  /* USER CODE END TIM1_Init 0 */
 
-  /* USER CODE BEGIN USART2_Init 1 */
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+  TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
 
-  /* USER CODE END USART2_Init 1 */
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart2) != HAL_OK)
+  /* USER CODE BEGIN TIM1_Init 1 */
+
+  /* USER CODE END TIM1_Init 1 */
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 9;
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 32000;
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.RepetitionCounter = 0;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim1) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN USART2_Init 2 */
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+  if (HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
+  sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
+  sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
+  sBreakDeadTimeConfig.DeadTime = 0;
+  sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
+  sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
+  sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
+  if (HAL_TIMEx_ConfigBreakDeadTime(&htim1, &sBreakDeadTimeConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM1_Init 2 */
 
-  /* USER CODE END USART2_Init 2 */
+  /* USER CODE END TIM1_Init 2 */
+  HAL_TIM_MspPostInit(&htim1);
+
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 9;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 32000;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+  HAL_TIM_MspPostInit(&htim2);
+
+}
+
+/**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 115200;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
 
 }
 
@@ -473,6 +611,12 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel1_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+  /* DMA1_Channel4_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
+  /* DMA1_Channel5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel5_IRQn);
 
 }
 
@@ -511,6 +655,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PA2 USART_RX_Pin */
+  GPIO_InitStruct.Pin = GPIO_PIN_2|USART_RX_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : LD2_Pin DIR_YAW_Pin STEP_PITCH_Pin ENA_PITCH_Pin */
   GPIO_InitStruct.Pin = LD2_Pin|DIR_YAW_Pin|STEP_PITCH_Pin|ENA_PITCH_Pin;
@@ -565,6 +715,15 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
        adc_buf[2] = PA4 (CH4)
        adc_buf[3] = PB0 (CH8)
        Range: 0..3300 mV on all channels */
+  }
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+  if (huart->Instance == USART1)
+  {
+    /* Received 10 bytes into uart_comm_rx_buf via DMA. */
+    /* You can process uart_comm_rx_buf here. */
   }
 }
 
