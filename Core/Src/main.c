@@ -120,15 +120,16 @@ static void Task200Hz(void)
       case GIMBAL_STATE_SEARCHING:
       {
           double motor_direction_yaw = gimbal_controller_get_omega_cmd_yaw();
+          double motor_direction_pitch = gimbal_controller_get_omega_cmd_pitch();
+          boolean_T beam_valid = gimbal_controller_get_beam_valid();
+
           enable_motor(YAW_MOTOR);
           drive_motor(YAW_MOTOR, motor_direction_yaw > 0);
-
-          double motor_direction_pitch = gimbal_controller_get_omega_cmd_pitch();
           enable_motor(PITCH_MOTOR);
           drive_motor(PITCH_MOTOR, motor_direction_pitch > 0);
 
-          // If beam is valid, transition to tracking mode
-          if (gimbal_controller_get_beam_valid())
+          // Remain in SEARCHING until beam_valid becomes true
+          if (beam_valid)
           {
               gimbal_st.gimbal_state_et = GIMBAL_STATE_TRACKING;
           }
@@ -137,15 +138,22 @@ static void Task200Hz(void)
       case GIMBAL_STATE_TRACKING:
       {
           double motor_direction_yaw = gimbal_controller_get_omega_cmd_yaw();
+          double motor_direction_pitch = gimbal_controller_get_omega_cmd_pitch();
+          boolean_T beam_valid = gimbal_controller_get_beam_valid();
+          boolean_T comm_enabled = gimbal_controller_get_comm_enabled();
+
+          if (!beam_valid)
+          {
+              gimbal_st.gimbal_state_et = GIMBAL_STATE_SEARCHING;
+              break;
+          }
+
           enable_motor(YAW_MOTOR);
           drive_motor(YAW_MOTOR, motor_direction_yaw > 0);
-
-          double motor_direction_pitch = gimbal_controller_get_omega_cmd_pitch();
           enable_motor(PITCH_MOTOR);
           drive_motor(PITCH_MOTOR, motor_direction_pitch > 0);
 
-          // If communication is enabled, transition to communication mode
-          if (gimbal_controller_get_comm_enabled())
+          if (comm_enabled)
           {
               gimbal_st.gimbal_state_et = GIMBAL_STATE_COMMUNICATION;
           }
@@ -153,7 +161,22 @@ static void Task200Hz(void)
       }
       case GIMBAL_STATE_COMMUNICATION:
       {
-          // Disable motors when in communication mode
+          boolean_T comm_enabled = gimbal_controller_get_comm_enabled();
+          boolean_T beam_valid = gimbal_controller_get_beam_valid();
+
+          if (!comm_enabled)
+          {
+              if (beam_valid)
+              {
+                  gimbal_st.gimbal_state_et = GIMBAL_STATE_TRACKING;
+              }
+              else
+              {
+                  gimbal_st.gimbal_state_et = GIMBAL_STATE_SEARCHING;
+              }
+              break;
+          }
+
           disable_motor(YAW_MOTOR);
           disable_motor(PITCH_MOTOR);
         break;
