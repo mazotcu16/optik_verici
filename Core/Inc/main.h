@@ -66,14 +66,12 @@ void Error_Handler(void);
 #define USART_RX_GPIO_Port GPIOA
 #define LD2_Pin GPIO_PIN_5
 #define LD2_GPIO_Port GPIOA
-#define ENA_YAW_Pin GPIO_PIN_10
-#define ENA_YAW_GPIO_Port GPIOB
-#define STEP_PWM_PITCH_Pin GPIO_PIN_11
+#define STEP_PWM_PITCH_Pin GPIO_PIN_0
 #define STEP_PWM_PITCH_GPIO_Port GPIOB
+#define ENA_YAW_Pin GPIO_PIN_2
+#define ENA_YAW_GPIO_Port GPIOB
 #define DIR_YAW_Pin GPIO_PIN_8
 #define DIR_YAW_GPIO_Port GPIOA
-#define STEP_PITCH_Pin GPIO_PIN_9
-#define STEP_PITCH_GPIO_Port GPIOA
 #define ENA_PITCH_Pin GPIO_PIN_10
 #define ENA_PITCH_GPIO_Port GPIOA
 #define STEP_PWM_YAW_Pin GPIO_PIN_11
@@ -84,8 +82,6 @@ void Error_Handler(void);
 #define TCK_GPIO_Port GPIOA
 #define SWO_Pin GPIO_PIN_3
 #define SWO_GPIO_Port GPIOB
-#define STEP_YAW_Pin GPIO_PIN_4
-#define STEP_YAW_GPIO_Port GPIOB
 #define DIR_PITCH_Pin GPIO_PIN_5
 #define DIR_PITCH_GPIO_Port GPIOB
 

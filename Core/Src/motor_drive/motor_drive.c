@@ -5,7 +5,7 @@
 #include "stm32f1xx_hal_tim.h"
 
 extern TIM_HandleTypeDef htim1;
-extern TIM_HandleTypeDef htim2;
+extern TIM_HandleTypeDef htim3;
 
 static uint32_t get_motor_pwm_pulse(motors_t motors_et)
 {
@@ -13,7 +13,7 @@ static uint32_t get_motor_pwm_pulse(motors_t motors_et)
     {
         return (htim1.Init.Period + 1U) / 2U;
     }
-    return (htim2.Init.Period + 1U) / 2U;
+    return (htim3.Init.Period + 1U) / 2U;
 }
 
 static void set_motor_pwm(motors_t motors_et, uint32_t pulse)
@@ -24,7 +24,7 @@ static void set_motor_pwm(motors_t motors_et, uint32_t pulse)
     }
     else
     {
-        __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, pulse);
+        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_4, pulse);
     }
 }
 
@@ -36,7 +36,7 @@ static void start_motor_pwm(motors_t motors_et)
     }
     else
     {
-        HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
+        HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
     }
 }
 
@@ -48,7 +48,7 @@ static void stop_motor_pwm(motors_t motors_et)
     }
     else
     {
-        HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_4);
+        HAL_TIM_PWM_Stop(&htim3, TIM_CHANNEL_4);
     }
 }
 

@@ -48,6 +48,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/simulink_ecemelif/gimbal_controller_api.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/simulink_ecemelif/gimbal_controller.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/motor_drive/motor_drive.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/enkoder/enkoder.c
 )
 
 # Add include paths
