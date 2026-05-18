@@ -18,6 +18,8 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include <math.h>
+#include <string.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -65,10 +67,27 @@ gimbal_t gimbal_st = {GIMBAL_STATE_IDLE};
 #define ADC_VREF_MV   3300U   /* reference voltage in millivolts */
 #define ADC_MAX_VAL   4095U   /* 12-bit */
 
+#define UART_PKT_START_0   0xAAU
+#define UART_PKT_START_1   0x55U
+#define UART_PKT_END_0     0x22U
+#define UART_PKT_END_1     0x99U
+#define UART_PKT_DATA_LEN  16U
+#define UART_PKT_TOTAL_LEN (2U + UART_PKT_DATA_LEN + 2U)  /* 20 bytes */
+
+#define UART_COMM_TIMEOUT_MS  3000U
+
+#define UART_RX_DMA_BUF_LEN  64U
+
 volatile uint16_t adc_buf[ADC_CHANNELS];
-static char uart_comm_tx_buf[10] = {"veri_gonde"};
-static uint8_t uart_comm_rx_buf[10];
+static uint8_t uart_rx_dma_buf[UART_RX_DMA_BUF_LEN];
+static uint16_t uart_rx_head = 0;
+static uint8_t uart_comm_tx_buf[UART_PKT_TOTAL_LEN] = {
+    UART_PKT_START_0, UART_PKT_START_1,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    UART_PKT_END_0, UART_PKT_END_1
+};
 static uint8_t uart_comm_tx_seq = 0;
+static volatile uint32_t uart_comm_last_pkt_tick = 0;
 MT6701_Handle enkoder_yaw   ={0};
 MT6701_Handle enkoder_pitch ={0};
 /* USER CODE END PV */
@@ -92,6 +111,10 @@ static void Task10Hz(void);
 static void Task1Hz(void);
 static void UART_Comm_Init(void);
 static void UART_Comm_Send(void);
+static void USART1_TX_SetGPIO_High(void);
+static void USART1_TX_SetUART_AF(void);
+static uint8_t UART_CheckRxPacket(void);
+static void    UART_ClearRxBuffer(void);
 float ADC_GetVolts(uint8_t ch);
 /* USER CODE END PFP */
 
@@ -110,7 +133,7 @@ static void SysTick_Init(void)
 static void UART_Comm_Init(void)
 {
   /* Start continuous UART Rx in DMA circular mode. */
-  HAL_UART_Receive_DMA(&huart1, uart_comm_rx_buf, sizeof(uart_comm_rx_buf));
+  HAL_UART_Receive_DMA(&huart1, uart_rx_dma_buf, UART_RX_DMA_BUF_LEN);
 }
 
 static void UART_Comm_Send(void)
@@ -124,6 +147,54 @@ static void UART_Comm_Send(void)
   uart_comm_tx_seq++;
 
   HAL_UART_Transmit_DMA(&huart1, (uint8_t*)uart_comm_tx_buf, sizeof(uart_comm_tx_buf));
+}
+
+static void USART1_TX_SetGPIO_High(void)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  GPIO_InitStruct.Pin   = GPIO_PIN_6;
+  GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_RESET);
+}
+
+static void USART1_TX_SetUART_AF(void)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  GPIO_InitStruct.Pin   = GPIO_PIN_6;
+  GPIO_InitStruct.Mode  = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+}
+
+static uint8_t UART_CheckRxPacket(void)
+{
+  uint16_t dma_write_pos = (uint16_t)(UART_RX_DMA_BUF_LEN - __HAL_DMA_GET_COUNTER(&hdma_usart1_rx));
+
+  while (1)
+  {
+    uint16_t available = (uint16_t)((dma_write_pos - uart_rx_head + UART_RX_DMA_BUF_LEN) % UART_RX_DMA_BUF_LEN);
+    if (available < UART_PKT_TOTAL_LEN) break;
+
+    uint16_t i = uart_rx_head;
+    if (uart_rx_dma_buf[i]                                                    == UART_PKT_START_0 &&
+        uart_rx_dma_buf[(i + 1U)                       % UART_RX_DMA_BUF_LEN] == UART_PKT_START_1 &&
+        uart_rx_dma_buf[(i + 2U + UART_PKT_DATA_LEN)  % UART_RX_DMA_BUF_LEN] == UART_PKT_END_0   &&
+        uart_rx_dma_buf[(i + 3U + UART_PKT_DATA_LEN)  % UART_RX_DMA_BUF_LEN] == UART_PKT_END_1)
+    {
+      uart_rx_head = (uint16_t)((uart_rx_head + UART_PKT_TOTAL_LEN) % UART_RX_DMA_BUF_LEN);
+      return 1U;
+    }
+    uart_rx_head = (uint16_t)((uart_rx_head + 1U) % UART_RX_DMA_BUF_LEN);
+  }
+  return 0U;
+}
+
+static void UART_ClearRxBuffer(void)
+{
+  memset(uart_rx_dma_buf, 0, UART_RX_DMA_BUF_LEN);
+  uart_rx_head = (uint16_t)(UART_RX_DMA_BUF_LEN - __HAL_DMA_GET_COUNTER(&hdma_usart1_rx));
 }
 
 static void Task200Hz(void)
@@ -144,6 +215,14 @@ static void Task200Hz(void)
     gimbal_controller_set_R(ADC_GetVolts(3));
     gimbal_controller_set_U(ADC_GetVolts(0));
     gimbal_controller_set_D(ADC_GetVolts(2));
+
+    if (MT6701_ReadAngle(&enkoder_pitch) == HAL_OK) {
+      gimbal_controller_set_theta_meas_pitch(enkoder_pitch.angle_deg * (M_PI / 180.0f));
+    }
+
+    if (MT6701_ReadAngle(&enkoder_yaw) == HAL_OK) {
+      gimbal_controller_set_theta_meas_yaw(enkoder_yaw.angle_deg * (M_PI / 180.0f));
+    }
    //gimbal_controller_set_theta_meas_yaw(0.0);  // TODO: Set actual yaw measurement
   //gimbal_controller_set_theta_meas_pitch(0.0); // TODO: Set actual pitch measurement
 
@@ -197,13 +276,27 @@ static void Task200Hz(void)
 
           if (comm_enabled)
           {
+              USART1_TX_SetUART_AF();
+              UART_ClearRxBuffer();
+              uart_comm_last_pkt_tick = HAL_GetTick();
               gimbal_st.gimbal_state_et = GIMBAL_STATE_COMMUNICATION;
           }
         break;
       }
       case GIMBAL_STATE_COMMUNICATION:
       {
-
+          if (UART_CheckRxPacket())
+          {
+              uart_comm_last_pkt_tick = HAL_GetTick();
+          }
+          if ((HAL_GetTick() - uart_comm_last_pkt_tick) >= UART_COMM_TIMEOUT_MS)
+          {
+            if(huart1.gState == HAL_UART_STATE_READY)
+            {
+              USART1_TX_SetGPIO_High();
+              gimbal_st.gimbal_state_et = GIMBAL_STATE_SEARCHING;
+            }
+          }
         break;
       }
     }
@@ -260,14 +353,6 @@ static void Task10Hz(void)
     {
       UART_Comm_Send();
     }
-
-              if (MT6701_ReadAngle(&enkoder_pitch) == HAL_OK) {
-
-          }
-
-              if (MT6701_ReadAngle(&enkoder_yaw) == HAL_OK) {
-
-          }
   }
 }
 
@@ -305,6 +390,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -332,6 +418,7 @@ int main(void)
   HAL_ADCEx_Calibration_Start(&hadc1);
   HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buf, ADC_CHANNELS);
   UART_Comm_Init();
+  USART1_TX_SetGPIO_High();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -824,11 +911,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-  if (huart->Instance == USART1)
-  {
-    /* Received 10 bytes into uart_comm_rx_buf via DMA. */
-    /* You can process uart_comm_rx_buf here. */
-  }
+  (void)huart;
 }
 
 /* USER CODE END 4 */
