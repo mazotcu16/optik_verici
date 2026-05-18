@@ -1,4 +1,5 @@
 /*
+/*
  * Academic License - for use in teaching, academic research, and meeting
  * course requirements at degree granting institutions only.  Not for
  * government, commercial, or other organizational use.
@@ -37,6 +38,21 @@ ExtY_gimbal_controller_T gimbal_controller_Y;
 static RT_MODEL_gimbal_controller_T gimbal_controller_M_;
 RT_MODEL_gimbal_controller_T *const gimbal_controller_M = &gimbal_controller_M_;
 
+/* USER PATCH: robust photodiode/lock parameters */
+#define PD_ALPHA        (0.85)
+#define S_MIN_PATCH     (0.05)
+#define DEADBAND        (0.03)
+#define LOCK_ON_THRESH  (0.08)
+#define LOCK_OFF_THRESH (0.14)
+#define LOCK_TARGET     (20.0)
+
+static real_T L_f = 0.0;
+static real_T R_f = 0.0;
+static real_T U_f = 0.0;
+static real_T D_f = 0.0;
+static boolean_T filter_initialized = 0;
+
+
 /* Model step function */
 void gimbal_controller_step(void)
 {
@@ -50,6 +66,20 @@ void gimbal_controller_step(void)
   boolean_T rtb_Compare;
   boolean_T rtb_Compare_g;
 
+  /* USER PATCH: low-pass filter for photodiode signals */
+  if (!filter_initialized) {
+    L_f = gimbal_controller_U.L;
+    R_f = gimbal_controller_U.R;
+    U_f = gimbal_controller_U.U;
+    D_f = gimbal_controller_U.D;
+    filter_initialized = 1;
+  } else {
+    L_f = PD_ALPHA * L_f + (1.0 - PD_ALPHA) * gimbal_controller_U.L;
+    R_f = PD_ALPHA * R_f + (1.0 - PD_ALPHA) * gimbal_controller_U.R;
+    U_f = PD_ALPHA * U_f + (1.0 - PD_ALPHA) * gimbal_controller_U.U;
+    D_f = PD_ALPHA * D_f + (1.0 - PD_ALPHA) * gimbal_controller_U.D;
+  }
+
   /* Switch: '<S2>/Switch' incorporates:
    *  Inport: '<Root>/D'
    *  Inport: '<Root>/L'
@@ -57,18 +87,17 @@ void gimbal_controller_step(void)
    *  Inport: '<Root>/U'
    *  Sum: '<S2>/Add'
    */
-  gimbal_controller_Y.e_x = ((gimbal_controller_U.L + gimbal_controller_U.R) +
-    gimbal_controller_U.U) + gimbal_controller_U.D;
+  gimbal_controller_Y.e_x = ((L_f + R_f) + U_f) + D_f;
 
   /* MinMax: '<S2>/MinMax' incorporates:
    *  Constant: '<S2>/Constant1'
    */
-  gimbal_controller_B.S_safe = fmax(gimbal_controller_Y.e_x, 0.05);
+  gimbal_controller_B.S_safe = fmax(gimbal_controller_Y.e_x, S_MIN_PATCH);
 
   /* RelationalOperator: '<S9>/Compare' incorporates:
    *  Constant: '<S9>/Constant'
    */
-  gimbal_controller_Y.beam_valid = (gimbal_controller_Y.e_x >= 0.05);
+  gimbal_controller_Y.beam_valid = (gimbal_controller_Y.e_x >= S_MIN_PATCH);
 
   /* Switch: '<S2>/Switch' */
   if (gimbal_controller_Y.beam_valid) {
@@ -78,8 +107,10 @@ void gimbal_controller_step(void)
      *  Product: '<S2>/Divide'
      *  Sum: '<S2>/Add1'
      */
-    gimbal_controller_Y.e_x = (gimbal_controller_U.R - gimbal_controller_U.L) /
-      gimbal_controller_B.S_safe;
+    gimbal_controller_Y.e_x = (R_f - L_f) / gimbal_controller_B.S_safe;
+    if (fabs(gimbal_controller_Y.e_x) < DEADBAND) {
+      gimbal_controller_Y.e_x = 0.0;
+    }
   } else {
     /* Switch: '<S2>/Switch' incorporates:
      *  Constant: '<S2>/Constant'
@@ -258,8 +289,10 @@ void gimbal_controller_step(void)
      *  Product: '<S2>/Divide1'
      *  Sum: '<S2>/Add2'
      */
-    gimbal_controller_Y.e_y = (gimbal_controller_U.U - gimbal_controller_U.D) /
-      gimbal_controller_B.S_safe;
+    gimbal_controller_Y.e_y = (U_f - D_f) / gimbal_controller_B.S_safe;
+    if (fabs(gimbal_controller_Y.e_y) < DEADBAND) {
+      gimbal_controller_Y.e_y = 0.0;
+    }
   } else {
     /* Abs: '<S1>/Abs1' incorporates:
      *  Constant: '<S2>/Constant2'
@@ -374,11 +407,19 @@ void gimbal_controller_step(void)
    *  Sum: '<S1>/Add'
    *  UnitDelay: '<S1>/lock_counter_memory'
    */
-  if ((fabs(gimbal_controller_Y.e_x) < 0.02) && (fabs(gimbal_controller_Y.e_y) <
-       0.02) && gimbal_controller_Y.beam_valid) {
-    gimbal_controller_Y.lock_counter++;
+  if ((fabs(gimbal_controller_Y.e_x) < LOCK_ON_THRESH) &&
+      (fabs(gimbal_controller_Y.e_y) < LOCK_ON_THRESH) &&
+      gimbal_controller_Y.beam_valid) {
+    if (gimbal_controller_Y.lock_counter < 200.0) {
+      gimbal_controller_Y.lock_counter++;
+    }
   } else {
-    gimbal_controller_Y.lock_counter = 0.0;
+    if (gimbal_controller_Y.lock_counter > 0.0) {
+      gimbal_controller_Y.lock_counter -= 0.1;
+      if (gimbal_controller_Y.lock_counter < 0.0) {
+        gimbal_controller_Y.lock_counter = 0.0;
+      }
+    }
   }
 
   /* End of Switch: '<S1>/Switch' */
@@ -388,7 +429,21 @@ void gimbal_controller_step(void)
    *  RelationalOperator: '<S8>/Compare'
    *  UnitDelay: '<S1>/lock_counter_memory'
    */
-  gimbal_controller_Y.comm_enabled = (gimbal_controller_Y.lock_counter >= 100.0);
+  if (!gimbal_controller_Y.comm_enabled) {
+    gimbal_controller_Y.comm_enabled =
+      (gimbal_controller_Y.lock_counter >= LOCK_TARGET);
+  } else if ((!gimbal_controller_Y.beam_valid) ||
+             (fabs(gimbal_controller_Y.e_x) > LOCK_OFF_THRESH) ||
+             (fabs(gimbal_controller_Y.e_y) > LOCK_OFF_THRESH)) {
+    gimbal_controller_Y.comm_enabled = 0;
+  } else {
+    gimbal_controller_Y.comm_enabled = 1;
+  }
+
+  if (gimbal_controller_Y.comm_enabled) {
+    gimbal_controller_Y.omega_cmd_yaw = 0.0;
+    gimbal_controller_Y.omega_cmd_pitch = 0.0;
+  }
 
   /* Switch: '<S3>/Switch1' incorporates:
    *  Constant: '<S3>/Constant1'
@@ -449,6 +504,21 @@ void gimbal_controller_step(void)
 
   /* Update for DiscreteIntegrator: '<S96>/Filter' */
   gimbal_controller_DW.Filter_DSTATE_ke += 0.005 * rtb_FilterCoefficient_p;
+
+  /* USER PATCH: freeze/reset controller states after communication lock
+   * This prevents small residual errors/noise from accumulating integral windup
+   * after comm_enabled becomes active.
+   */
+  if (gimbal_controller_Y.comm_enabled) {
+    gimbal_controller_DW.Integrator_DSTATE = 0.0;
+    gimbal_controller_DW.Integrator_DSTATE_f = 0.0;
+    gimbal_controller_DW.Integrator_DSTATE_a = 0.0;
+    gimbal_controller_DW.Integrator_DSTATE_b = 0.0;
+    gimbal_controller_DW.Filter_DSTATE = 0.0;
+    gimbal_controller_DW.Filter_DSTATE_k = 0.0;
+    gimbal_controller_DW.Filter_DSTATE_a = 0.0;
+    gimbal_controller_DW.Filter_DSTATE_ke = 0.0;
+  }
 }
 
 /* Model initialize function */
@@ -459,6 +529,17 @@ void gimbal_controller_initialize(void)
 
   /* InitializeConditions for UnitDelay: '<S3>/theta_search_pitch_memory' */
   gimbal_controller_DW.theta_search_pitch_memory_DSTAT = -0.1;
+
+  /* USER PATCH: reset robust lock/filter states */
+  filter_initialized = 0;
+  L_f = 0.0;
+  R_f = 0.0;
+  U_f = 0.0;
+  D_f = 0.0;
+  gimbal_controller_Y.lock_counter = 0.0;
+  gimbal_controller_Y.comm_enabled = 0;
+  gimbal_controller_Y.omega_cmd_yaw = 0.0;
+  gimbal_controller_Y.omega_cmd_pitch = 0.0;
 }
 
 /* Model terminate function */
