@@ -18,8 +18,6 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include <math.h>
-#include <string.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -28,6 +26,9 @@
 #include "motor_drive/motor_drive.h"
 #include "stm32f1xx_hal_gpio.h"
 #include "enkoder/enkoder.h"
+#include "stm32f1xx_hal_uart.h"
+#include <math.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -156,7 +157,7 @@ static void USART1_TX_SetGPIO_High(void)
   GPIO_InitStruct.Mode  = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
 }
 
 static void USART1_TX_SetUART_AF(void)
@@ -277,6 +278,7 @@ static void Task200Hz(void)
           if (comm_enabled)
           {
               USART1_TX_SetUART_AF();
+              UART_Comm_Init();
               UART_ClearRxBuffer();
               uart_comm_last_pkt_tick = HAL_GetTick();
               gimbal_st.gimbal_state_et = GIMBAL_STATE_COMMUNICATION;
@@ -288,14 +290,16 @@ static void Task200Hz(void)
           if (UART_CheckRxPacket())
           {
               uart_comm_last_pkt_tick = HAL_GetTick();
+
           }
+          
           if ((HAL_GetTick() - uart_comm_last_pkt_tick) >= UART_COMM_TIMEOUT_MS)
           {
-            if(huart1.gState == HAL_UART_STATE_READY)
-            {
-              USART1_TX_SetGPIO_High();
-              gimbal_st.gimbal_state_et = GIMBAL_STATE_SEARCHING;
-            }
+            
+            HAL_UART_DMAStop(&huart1);
+
+            USART1_TX_SetGPIO_High();
+            gimbal_st.gimbal_state_et = GIMBAL_STATE_SEARCHING;
           }
         break;
       }
@@ -390,7 +394,6 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -417,7 +420,6 @@ int main(void)
   SysTick_Init();
   HAL_ADCEx_Calibration_Start(&hadc1);
   HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buf, ADC_CHANNELS);
-  UART_Comm_Init();
   USART1_TX_SetGPIO_High();
   /* USER CODE END 2 */
 
